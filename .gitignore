@@ -1,0 +1,15 @@
+# Nyantivirus runtime files
+scan-history.log
+
+# ClamAV virus database (huge, downloaded at runtime via freshclam)
+# Only relevant if someone points ClamAV's db here; never commit it.
+*.cvd
+*.cld
+
+# Windows / editor junk
+Thumbs.db
+desktop.ini
+*.tmp
+
+assets/kawaii.ttf
+assets/fontname.txt
