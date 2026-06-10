@@ -194,7 +194,7 @@ $btnMin = New-Object System.Windows.Forms.Button
 $btnMin.Text = "-"; $btnMin.Location = New-Object System.Drawing.Point(690,12); $btnMin.Size = New-Object System.Drawing.Size(30,30)
 $btnMin.FlatStyle = "Flat"; $btnMin.FlatAppearance.BorderSize = 0; $btnMin.FlatAppearance.MouseOverBackColor = $cLavH
 $btnMin.BackColor = $cLav; $btnMin.ForeColor = $cCard; $btnMin.Font = $fBtn; $btnMin.Cursor = "Hand"
-$btnMin.Add_Click({ $form.WindowState = "Minimized" }); $form.Controls.Add($btnMin); Set-Rounded $btnMin 15
+$btnMin.Add_Click({ Minimize-ToTray }); $form.Controls.Add($btnMin); Set-Rounded $btnMin 15
 
 # ---- Status card ----
 $statusBox = New-Object System.Windows.Forms.Label
@@ -274,6 +274,12 @@ function On-ScanDone {
         Write-Log "$($script:scanLabel) finished: threat(s) detected! open 'Threats' to review (;ŏ﹏ŏ)" $cRed
         Set-CatMood "worried"
     }
+    try {
+        if ($script:tray) {
+            if ($code -eq 0) { $script:tray.ShowBalloonTip(5000,"Nyantivirus","$($script:scanLabel) finished: no threats! you're clean (=^w^=)",[System.Windows.Forms.ToolTipIcon]::Info) }
+            else { $script:tray.ShowBalloonTip(6000,"Nyantivirus","$($script:scanLabel): threat(s) detected! open Threats to review.",[System.Windows.Forms.ToolTipIcon]::Warning) }
+        }
+    } catch {}
     Add-History "$($script:scanLabel) | exit=$code"
     if ($script:scanTmp -and (Test-Path $script:scanTmp)) { Remove-Item $script:scanTmp -Force -ErrorAction SilentlyContinue }
     Refresh-Status
@@ -606,6 +612,22 @@ $timer.Add_Tick({
     $form.Invalidate()
 })
 
+# ---- Minimize to system tray ----
+function Minimize-ToTray { $form.Hide() }
+function Restore-FromTray { $form.Show(); $form.WindowState = "Normal"; $form.Activate(); [void]$form.BringToFront() }
+$script:tray = New-Object System.Windows.Forms.NotifyIcon
+$script:tray.Text = "Nyantivirus (=^w^=)"
+try { if ($form.Icon) { $script:tray.Icon = $form.Icon } else { $script:tray.Icon = [System.Drawing.SystemIcons]::Application } } catch { $script:tray.Icon = [System.Drawing.SystemIcons]::Application }
+$script:tray.Visible = $true
+$trayMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$miOpen = $trayMenu.Items.Add("Open Nyantivirus  (=^w^=)")
+$miQuit = $trayMenu.Items.Add("Quit")
+$miOpen.Add_Click({ Restore-FromTray })
+$miQuit.Add_Click({ $form.Close() })
+$script:tray.ContextMenuStrip = $trayMenu
+$script:tray.Add_DoubleClick({ Restore-FromTray })
+$script:tray.Add_BalloonTipClicked({ Restore-FromTray })
+
 # ---- Start ----
 $form.Add_Shown({
     Set-Rounded $form 28
@@ -614,5 +636,5 @@ $form.Add_Shown({
     Play-Nya
     $timer.Start()
 })
-$form.Add_FormClosing({ $timer.Stop() })
+$form.Add_FormClosing({ $timer.Stop(); try { $script:tray.Visible = $false; $script:tray.Dispose() } catch {} })
 [void]$form.ShowDialog()
