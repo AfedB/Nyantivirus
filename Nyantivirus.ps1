@@ -151,6 +151,7 @@ $form.FormBorderStyle = "None"
 $form.BackColor = $cTop
 $form.ForeColor = $cText
 $form.Font = $fSub
+$form.ShowInTaskbar = $false   # tray app: no taskbar button (the cat lives in the notification area)
 $bf = [System.Reflection.BindingFlags]"Instance,NonPublic"
 $form.GetType().GetProperty('DoubleBuffered',$bf).SetValue($form,$true,$null)
 try { $ico = Join-Path $AppDir "nyantivirus.ico"; if (Test-Path $ico) { $form.Icon = New-Object System.Drawing.Icon($ico) } } catch {}
@@ -646,4 +647,5 @@ $form.Add_Shown({
     $timer.Start()
 })
 $form.Add_FormClosing({ $timer.Stop(); try { $script:tray.Visible = $false; $script:tray.Dispose() } catch {} })
-[void]$form.ShowDialog()
+# Application.Run (not ShowDialog) so hiding to tray doesn't end the app
+[System.Windows.Forms.Application]::Run($form)
