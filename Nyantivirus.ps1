@@ -112,6 +112,18 @@ function Set-Rounded {
     $ctrl.Region = New-Object System.Drawing.Region($path)
 }
 
+# ---- Rounded GraphicsPath (for drawing kawaii borders) ----
+function Get-RoundPath {
+    param([int]$x, [int]$y, [int]$w, [int]$h, [int]$r)
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $p.AddArc($x,$y,$r,$r,180,90)
+    $p.AddArc($x+$w-$r,$y,$r,$r,270,90)
+    $p.AddArc($x+$w-$r,$y+$h-$r,$r,$r,0,90)
+    $p.AddArc($x,$y+$h-$r,$r,$r,90,90)
+    $p.CloseAllFigures()
+    return $p
+}
+
 # ---- Sounds ----
 function Play-Sound {
     param([string]$notes)
@@ -353,11 +365,100 @@ function Scan-Clam {
     Start-Process cmd.exe -ArgumentList "/k",$cmd
 }
 
+# ---- Kawaii helpers for the custom folder picker ----
+$script:dlgDrag = $false
+function Wire-DragDialog {
+    param($c)
+    $c.Add_MouseDown({ param($s,$e) if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) { $script:dlgDrag = $true; $script:dlgCur = [System.Windows.Forms.Cursor]::Position } })
+    $c.Add_MouseMove({ param($s,$e) if ($script:dlgDrag) {
+        $f = $s.FindForm(); $now = [System.Windows.Forms.Cursor]::Position
+        $f.Location = New-Object System.Drawing.Point(($f.Location.X + $now.X - $script:dlgCur.X),($f.Location.Y + $now.Y - $script:dlgCur.Y)); $script:dlgCur = $now } })
+    $c.Add_MouseUp({ $script:dlgDrag = $false })
+}
+function Style-KButton {
+    param($b, [System.Drawing.Color]$base, [System.Drawing.Color]$hover, [int]$radius = 18)
+    $b.FlatStyle = "Flat"; $b.FlatAppearance.BorderSize = 0; $b.FlatAppearance.MouseOverBackColor = $hover
+    $b.BackColor = $base; $b.ForeColor = $cText; $b.Font = $fBtn; $b.Cursor = "Hand"
+    Set-Rounded $b $radius
+}
+
+# ---- Custom kawaii folder picker (replaces the grey Windows dialog) ----
 function Pick-Folder {
-    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dlg.Description = "Pick a folder to scan"
-    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.SelectedPath }
-    return $null
+    $script:pickSel = $null
+    $pf = New-Object System.Windows.Forms.Form
+    $pf.Text = "Pick a folder"; $pf.FormBorderStyle = "None"
+    $pf.Size = New-Object System.Drawing.Size(480,560); $pf.StartPosition = "CenterScreen"
+    $pf.BackColor = $cTop; $pf.ShowInTaskbar = $false
+    try { if ($form.Icon) { $pf.Icon = $form.Icon } } catch {}
+
+    $hdr = New-Object System.Windows.Forms.Label
+    $hdr.Text = "(=^･ω･^=) choose a folder to scan"; $hdr.Font = (KFont 14); $hdr.ForeColor = $cAccent
+    $hdr.Location = New-Object System.Drawing.Point(20,16); $hdr.Size = New-Object System.Drawing.Size(390,30)
+    $hdr.BackColor = [System.Drawing.Color]::Transparent
+    $pf.Controls.Add($hdr); Wire-DragDialog $hdr; Wire-DragDialog $pf
+
+    $x = New-Object System.Windows.Forms.Button
+    $x.Text = "x"; $x.Location = New-Object System.Drawing.Point(436,14); $x.Size = New-Object System.Drawing.Size(28,28)
+    Style-KButton $x $cPink $cRed 14; $x.ForeColor = $cCard
+    $x.Add_Click({ $script:pickSel = $null; $pf.Close() }); $pf.Controls.Add($x)
+
+    # quick shortcuts
+    $qD = New-Object System.Windows.Forms.Button; $qD.Text = "Downloads"; $qD.Location = New-Object System.Drawing.Point(20,52);  $qD.Size = New-Object System.Drawing.Size(140,38); Style-KButton $qD $cMint $cMintH
+    $qO = New-Object System.Windows.Forms.Button; $qO.Text = "Documents"; $qO.Location = New-Object System.Drawing.Point(168,52); $qO.Size = New-Object System.Drawing.Size(140,38); Style-KButton $qO $cMint $cMintH
+    $qK = New-Object System.Windows.Forms.Button; $qK.Text = "Desktop";   $qK.Location = New-Object System.Drawing.Point(316,52); $qK.Size = New-Object System.Drawing.Size(140,38); Style-KButton $qK $cMint $cMintH
+    $qD.Add_Click({ $script:pickSel = (Join-Path $env:USERPROFILE 'Downloads'); $pf.Close() })
+    $qO.Add_Click({ $script:pickSel = [Environment]::GetFolderPath('MyDocuments'); $pf.Close() })
+    $qK.Add_Click({ $script:pickSel = [Environment]::GetFolderPath('Desktop'); $pf.Close() })
+    $pf.Controls.AddRange(@($qD,$qO,$qK))
+
+    $pathLbl = New-Object System.Windows.Forms.Label
+    $pathLbl.Location = New-Object System.Drawing.Point(20,454); $pathLbl.Size = New-Object System.Drawing.Size(436,30)
+    $pathLbl.Font = $fMono; $pathLbl.ForeColor = $cText; $pathLbl.BackColor = $cCard
+    $pathLbl.Text = " (no folder selected)"; $pathLbl.Padding = New-Object System.Windows.Forms.Padding(8,0,0,0); $pathLbl.TextAlign = "MiddleLeft"
+    $pf.Controls.Add($pathLbl); Set-Rounded $pathLbl 12
+
+    $tv = New-Object System.Windows.Forms.TreeView
+    $tv.Location = New-Object System.Drawing.Point(20,100); $tv.Size = New-Object System.Drawing.Size(436,344)
+    $tv.BackColor = $cCard; $tv.ForeColor = $cText; $tv.Font = $fMono; $tv.BorderStyle = "FixedSingle"; $tv.HideSelection = $false
+    foreach ($d in [System.IO.DriveInfo]::GetDrives()) {
+        if ($d.IsReady) {
+            $node = New-Object System.Windows.Forms.TreeNode($d.Name)
+            $node.Tag = $d.RootDirectory.FullName
+            [void]$node.Nodes.Add("..."); [void]$tv.Nodes.Add($node)
+        }
+    }
+    $tv.Add_BeforeExpand({ param($s,$e)
+        $e.Node.Nodes.Clear()
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($e.Node.Tag)) {
+                $child = New-Object System.Windows.Forms.TreeNode([System.IO.Path]::GetFileName($sub))
+                $child.Tag = $sub; [void]$child.Nodes.Add("..."); [void]$e.Node.Nodes.Add($child)
+            }
+        } catch {}
+    })
+    $tv.Add_AfterSelect({ param($s,$e) if ($e.Node.Tag) { $script:pickSel = $e.Node.Tag; $pathLbl.Text = " " + $e.Node.Tag } })
+    $pf.Controls.Add($tv)
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = "Scan this folder"; $ok.Location = New-Object System.Drawing.Point(20,494); $ok.Size = New-Object System.Drawing.Size(300,42); Style-KButton $ok $cPink $cPinkH 20
+    $ok.Add_Click({ if ($script:pickSel) { $pf.Close() } })
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = "Cancel"; $cancel.Location = New-Object System.Drawing.Point(328,494); $cancel.Size = New-Object System.Drawing.Size(128,42); Style-KButton $cancel $cLav $cLavH 20
+    $cancel.Add_Click({ $script:pickSel = $null; $pf.Close() })
+    $pf.Controls.AddRange(@($ok,$cancel))
+
+    # kawaii border so the picker stands out from the pink window behind it
+    $pf.Add_Paint({ param($s,$e)
+        $g = $e.Graphics; $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $w = $pf.ClientSize.Width; $h = $pf.ClientSize.Height
+        $p1 = Get-RoundPath 2 2 ($w-5) ($h-5) 22
+        $pen1 = New-Object System.Drawing.Pen($cAccent,3); $g.DrawPath($pen1,$p1); $pen1.Dispose(); $p1.Dispose()
+        $p2 = Get-RoundPath 6 6 ($w-13) ($h-13) 18
+        $pen2 = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255,255,255),2); $g.DrawPath($pen2,$p2); $pen2.Dispose(); $p2.Dispose()
+    })
+    $pf.Add_Shown({ Set-Rounded $pf 24; $pf.Invalidate() })
+    [void]$pf.ShowDialog($form)
+    return $script:pickSel
 }
 
 # ---- Threats viewer ----
