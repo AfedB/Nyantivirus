@@ -7,7 +7,7 @@
 A kawaii control panel for **Microsoft Defender** + **ClamAV** on Windows.
 Free, open source, no telemetry, ridiculously cute.
 
-![Nyantivirus screenshot](docs/screenshot.png)
+![Nyantivirus in action](docs/screenshot.gif)
 
 </div>
 
