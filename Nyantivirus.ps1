@@ -12,6 +12,15 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     exit
 }
 
+# ---- Hide the PowerShell console window (no taskbar/console clutter, only the app shows) ----
+try {
+    $win = Add-Type -Name NyanWin -Namespace Native -PassThru -MemberDefinition '
+        [DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();
+        [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);'
+    $hwnd = $win::GetConsoleWindow()
+    if ($hwnd -ne [System.IntPtr]::Zero) { [void]$win::ShowWindow($hwnd, 0) }  # 0 = SW_HIDE
+} catch {}
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
